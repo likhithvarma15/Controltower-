@@ -433,7 +433,7 @@ textarea.fld-in{resize:vertical;min-height:60px}
     <aside class="sb" id="sidebar">
       <div class="cc-bar" id="entScopeBar"></div>
       <nav class="sb-nav" id="sbNav"></nav>
-      <div class="sb-foot"><span style="opacity:.5">build v27</span></div>
+      <div class="sb-foot"><span style="opacity:.5">build v28</span></div>
     </aside>
 
     <main class="mx">
@@ -690,7 +690,13 @@ function doApprove(id){const r=DB.requests.find(x=>x.record_id===id);if(!r)retur
   else if(r.approval_stage==='ceo_review'){audit(r,'approved','CEO secondary approval \u2192 payment');setStage(r,'payment');toast('CEO approved \u2014 ready for payment','ok');}
   rerender();}
 function doReject(id){openModal('Reject request','<div class="fld"><label class="fld-lbl">Reason</label><textarea class="fld-in" id="rjN"></textarea></div>','<button class="tb-btn" onclick="closeModal()">Cancel</button><button class="act-btn act-reject" onclick="confirmReject(\''+id+'\')">Confirm reject</button>')}
-function confirmReject(id){const r=DB.requests.find(x=>x.record_id===id);const n=(document.getElementById('rjN').value||'No reason').trim();audit(r,'rejected','Rejected \u2014 '+n);setStage(r,'rejected');closeModal();toast('Request rejected','warn');rerender()}
+function confirmReject(id){const r=DB.requests.find(x=>x.record_id===id);const n=(document.getElementById('rjN').value||'No reason').trim();audit(r,'rejected','Rejected \u2014 '+n);setStage(r,'rejected');closeModal();toast('Request rejected','warn');
+  if(typeof notif==='function'){
+    if(r.kind==='maccess')notif('&#10060;','<b>Access declined</b> \u00b7 '+(MODULES.find(function(x){return x[0]===r.macc_module})||[,,r.macc_module])[2]+' \u2014 '+n,r.macc_user,{module:'rbac'});
+    else if(r.kind==='access')notif('&#10060;','<b>Access declined</b> \u00b7 '+r.access_brand+' \u2014 '+n,r.access_user,{module:'company-summary',entityBrand:r.access_brand});
+    else notif('&#10060;','<b>Request declined</b> \u00b7 '+r.title+' \u2014 '+n,r.owner,{module:'approvals',entity:r.entity_id,recordId:r.record_id});
+  }
+  rerender()}
 function doEscalate(id){const r=DB.requests.find(x=>x.record_id===id);openModal('Escalate to CEO','<p style="font-size:12.5px;color:var(--ink-3);margin-bottom:12px">Moves <b>'+r.title+'</b> to the CEO queue.</p><div class="fld"><label class="fld-lbl">Note</label><textarea class="fld-in" id="esN">Requesting CEO secondary sign-off.</textarea></div>','<button class="tb-btn" onclick="closeModal()">Cancel</button><button class="act-btn act-escalate" onclick="confirmEscalate(\''+id+'\')">Escalate</button>')}
 function confirmEscalate(id){const r=DB.requests.find(x=>x.record_id===id);const n=(document.getElementById('esN').value||'Escalated').trim();audit(r,'escalated',n);setStage(r,'ceo_review');closeModal();toast('Escalated to CEO','info');notif('\u2191','<b>Escalated to CEO</b> \u00b7 '+r.title,'anand',{module:'approvals',entity:r.entity_id,recordId:r.record_id});rerender()}
 function doPay(id){const r=DB.requests.find(x=>x.record_id===id);audit(r,'paid','Payment instruction generated \u00b7 effective '+fmtDT(nowISO(0))+' (no funds moved)');setStage(r,'done');if(r._fromInvoice){const inv=DB.invoices.find(i=>i.id===r._fromInvoice);if(inv){inv.status='paid';audit(inv,'paid','Marked paid via '+r.record_id);const tk=DB.tasks.find(t=>t.linked_record_id===inv.id&&t.status==='open');if(tk){tk.status='closed';audit(tk,'closed','Auto-closed \u2014 payment processed');}}}DB.payments.push({id:nid('pay'),request:r.record_id,entity_id:r.entity_id,cost_centre_id:r.cost_centre_id,amount:r.amount,status:'processed',at:nowISO(0)});toast('Payment instruction generated','ok');notif('\ud83d\udcb0','<b>Payment processed</b> \u00b7 '+r.title,null,{module:'payments',entity:r.entity_id});rerender()}
@@ -760,7 +766,7 @@ function backFrom(){ // step up one level from a detail page
 
 function goOverview(){VIEW='overview';closePanels();renderAll()}
 function goBrand(id){VIEW=id;ENTSCOPE='all';CCSCOPE='all';PG=moduleAllowed('company-summary')?'company-summary':role().modules[0];closePanels();renderAll()}
-function navMod(m){if(!moduleAllowed(m))return;const leavingDetail=(PG==='cc-detail');PG=m;if(m!=='cc-detail'){CC_OPEN=null;CCSCOPE='all';if(leavingDetail&&m==='cost-centres')ENTSCOPE='all';}closePanels();renderAll()}
+function navMod(m){var ok=typeof moduleUnlocked==='function'?moduleUnlocked(m):moduleAllowed(m);if(!ok)return;const leavingDetail=(PG==='cc-detail');PG=m;if(m!=='cc-detail'){CC_OPEN=null;CCSCOPE='all';if(leavingDetail&&m==='cost-centres')ENTSCOPE='all';}closePanels();renderAll()}
 function openCompanyFromOverview(b){goBrand(b)}
 function openCC(ccId){const c=DB.costCentres.find(x=>x.id===ccId);if(!c)return;VIEW=entityBrand(c.entity_id);ENTSCOPE=c.entity_id;CCSCOPE=ccId;PG='cc-detail';CC_OPEN=ccId;closePanels();renderAll()}
 
@@ -884,7 +890,7 @@ function renderPage(){const p=document.getElementById('page');
       '<div class="banner warn"><span>&#128274;</span><span>As '+(user().title||user().role)+' you have <b>view-only</b> access to '+(DB.brands.find(function(b){return b.id===VIEW})||{name:VIEW}).name+'. Dashboards, summaries and lists are visible, but individual records (vendors, invoices, contracts, cost-centre detail) are private to this company\u2019s own managers and personnel.</span></div>';
     return;
   }
-  if(detailPages.indexOf(PG)<0&&!moduleAllowed(PG))PG='company-summary';
+  if(detailPages.indexOf(PG)<0&&!(typeof moduleUnlocked==='function'?moduleUnlocked(PG):moduleAllowed(PG)))PG='company-summary';
   let h='';switch(PG){
     case 'company-summary':h=pgCompanySummary();break;
     case 'cost-centres':h=pgCostCentres();break;
@@ -1178,7 +1184,7 @@ function reqCard(r){
   } else if(['done','rejected'].includes(r.approval_stage))actions='<span class="act-note">'+(r.approval_stage==='done'?'Completed · payment instruction generated':'Closed · rejected')+'</span>';
   else actions='<span class="act-note">Waiting on '+stageLabel(r.approval_stage)+'</span>';
   return '<div class="req'+open+adhoc+'"><div class="req-hd" onclick="toggleReq(\''+r.record_id+'\')"><span class="req-id">'+r.record_id+'</span><div class="req-main"><div class="req-title">'+r.title+' '+typeChip+'</div><div class="req-meta">'+r.requester+' · '+r.cost_centre_name+' · '+r.entity_name+'</div></div><span class="badge '+stageBadge(r.approval_stage)[0]+'">'+stageBadge(r.approval_stage)[1]+'</span><span class="req-amt">'+fmtINR(r.amount)+'</span><span class="req-chev">&#9656;</span></div>'+
-  '<div class="req-body"><div class="req-inner"><div class="rail">'+rail+'</div><div class="req-grid"><div class="req-f"><div class="req-f-l">Type</div><div class="req-f-v">'+(r.type==='adhoc'?'Adhoc / urgent':'Planned')+'</div></div><div class="req-f"><div class="req-f-l">Routing</div><div class="req-f-v">'+(r.teamRaised?'Team→Head→FM':'Head→FM')+(needsCEO(r)?'→CEO':'')+'</div></div><div class="req-f"><div class="req-f-l">Owner</div><div class="req-f-v">'+userName(r.owner)+'</div></div></div>'+
+  '<div class="req-body"><div class="req-inner"><div class="rail">'+rail+'</div><div class="req-grid"><div class="req-f"><div class="req-f-l">Type</div><div class="req-f-v">'+(r.type==='adhoc'?'Adhoc / urgent':'Planned')+'</div></div><div class="req-f"><div class="req-f-l">Routing</div><div class="req-f-v">'+(r.teamRaised?'Team→Head→FM':'Head→FM')+(needsCEO(r)?'→CEO':'')+'</div></div><div class="req-f"><div class="req-f-l">Owner</div><div class="req-f-v">'+userName(r.owner)+'</div></div>'+((r.kind==='maccess'||r.kind==='access')?'<div class="req-f"><div class="req-f-l">Level requested</div><div class="req-f-v"><b>'+(r.macc_level||r.access_level||'full')+'</b></div></div>':'')+'</div>'+
   (r.type==='adhoc'&&r.adhocNote?'<div class="flow-note"><span class="fn-ic">&#9888;</span><span><b>Adhoc reason:</b> '+r.adhocNote+'</span></div>':'')+
   '<div class="sec-t" style="margin-top:14px">Audit history</div><div class="req-log">'+log+'</div><div class="req-actions">'+actions+'</div></div></div></div>';
 }
@@ -2799,10 +2805,12 @@ pgGroupOverview=function(){
    ============================================================ */
 
 /* ---------- module-level access grants (session) ---------- */
-DB_MGRANTS = (typeof DB_MGRANTS!=='undefined')?DB_MGRANTS:{};  /* {userId:{'brand:module':true}} */
+DB_MGRANTS = (typeof DB_MGRANTS!=='undefined')?DB_MGRANTS:{};  /* {userId:{'brand:module':'view'|'full'}} */
 function mGrantKey(brand,m){return brand+':'+m;}
 function hasModuleGrant(uid,brand,m){return !!(DB_MGRANTS[uid]&&DB_MGRANTS[uid][mGrantKey(brand,m)]);}
-function grantModule(uid,brand,m){DB_MGRANTS[uid]=DB_MGRANTS[uid]||{};DB_MGRANTS[uid][mGrantKey(brand,m)]=true;}
+function moduleGrantLevel(uid,brand,m){return (DB_MGRANTS[uid]&&DB_MGRANTS[uid][mGrantKey(brand,m)])||null;}
+function hasFullModuleGrant(uid,brand,m){return moduleGrantLevel(uid,brand,m)==='full';}
+function grantModule(uid,brand,m,lvl){DB_MGRANTS[uid]=DB_MGRANTS[uid]||{};DB_MGRANTS[uid][mGrantKey(brand,m)]=lvl||'full';}
 
 /* the full set of sections a company view could show (role-relevant superset) */
 var ALL_COMPANY_MODS=['company-summary','cost-centres','shared-services','budget','allocation','expense','payments','sales','compliance','fx','vendor','contracts','payroll','approvals','tasks','exceptions','audit','trends','flows','journeys','rbac','config'];
@@ -2814,26 +2822,42 @@ function moduleUnlocked(m){
   return moduleAllowed(m);
 }
 
-/* ---------- request access for a specific module ---------- */
-function requestModule(m){
+/* ---------- request access for a specific module: popup with view/full choice ---------- */
+function requestModuleAccess(m){
+  var meta=MODULES.find(function(x){return x[0]===m;});var mlabel=meta?meta[2]:m;
+  openModal('Request access \u2014 '+mlabel,
+    '<p style="font-size:12.5px;color:var(--ink-3);margin-bottom:14px">Choose the level of access to request for <b>'+mlabel+'</b>. This goes to the Finance Manager for approval.</p>'+
+    '<div style="display:flex;flex-direction:column;gap:10px">'+
+    '<label class="acc-opt" onclick="document.getElementById(\'maccFull\').checked=false"><input type="radio" name="maccLvl" id="maccView" checked> <b>View access</b> \u2014 see this section\u2019s data, <b>no task actions</b> (read-only).</label>'+
+    '<label class="acc-opt"><input type="radio" name="maccLvl" id="maccFull"> <b>Full access</b> \u2014 view <b>and</b> perform actions in this section as your role allows.</label>'+
+    '</div>',
+    '<button class="tb-btn" onclick="closeModal()">Cancel</button><button class="act-btn act-pay" onclick="submitModuleAccessRequest(\''+m+'\')">Send request</button>');
+}
+function submitModuleAccessRequest(m){
+  var lvl=document.getElementById('maccFull')&&document.getElementById('maccFull').checked?'full':'view';
+  closeModal();
+  requestModule(m,lvl);
+}
+function requestModule(m,lvl){
+  lvl=lvl||'full';
   var u=user();var bn=(DB.brands.find(function(b){return b.id===VIEW})||{name:VIEW}).name;
   var meta=MODULES.find(function(x){return x[0]===m;});var mlabel=meta?meta[2]:m;
   var rid='MACC-'+u.id+'-'+VIEW+'-'+m;
   if(DB.requests.some(function(r){return r.record_id===rid&&r.approval_stage!=='done'&&r.approval_stage!=='rejected';})){toast('Request already pending','info');return;}
-  DB.requests.unshift({record_id:rid,title:'Section access \u2014 '+mlabel+' ('+bn+')',type:'adhoc',kind:'maccess',
-    macc_user:u.id,macc_brand:VIEW,macc_module:m,amount:0,entity_id:brandEntities(VIEW)[0].id,entity_name:bn,
+  DB.requests.unshift({record_id:rid,title:'Section access ('+lvl+') \u2014 '+mlabel+' ('+bn+')',type:'adhoc',kind:'maccess',
+    macc_user:u.id,macc_brand:VIEW,macc_module:m,macc_level:lvl,amount:0,entity_id:brandEntities(VIEW)[0].id,entity_name:bn,
     cost_centre_id:null,raiser_role:rkey(),requester:u.name+' ('+(u.title||u.role)+')',team_raised:false,
-    approval_stage:'fm_review',adhoc_note:'Requesting access to '+mlabel+' based on work',
-    created_at:nowISO(0),audit_history:[[u.name,'raised','Requested access to '+mlabel,0]]});
-  if(typeof notif==='function')notif('&#128274;','<b>Section access</b> \u00b7 '+u.name+' \u2192 '+mlabel,'swati',{module:'rbac'});
-  toast('Access request sent to Finance Manager / CEO','ok');rerender();
+    approval_stage:'fm_review',adhoc_note:'Requesting '+lvl+' access to '+mlabel+' based on work',
+    created_at:nowISO(0),audit_history:[[u.name,'raised','Requested '+lvl+' access to '+mlabel,0]]});
+  if(typeof notif==='function')notif('&#128274;','<b>Section access ('+lvl+')</b> \u00b7 '+u.name+' \u2192 '+mlabel,'swati',{module:'rbac'});
+  toast(lvl.charAt(0).toUpperCase()+lvl.slice(1)+' access request sent to Finance Manager','ok');rerender();
 }
 function approveModule(rid){var r=DB.requests.find(function(x){return x.record_id===rid;});if(!r)return;
-  grantModule(r.macc_user,r.macc_brand,r.macc_module);r.approval_stage='done';
-  r.audit_history.push([user().name,'approved','Section access granted',0]);
-  if(typeof audit==='function')audit({record_id:rid,module:'access'},'approved','Granted '+r.macc_module+' in '+r.macc_brand+' to '+r.macc_user);
-  if(typeof notif==='function')notif('&#9989;','<b>Section unlocked</b> \u00b7 '+r.macc_module,r.macc_user,{module:r.macc_module});
-  toast('Section access granted','ok');rerender();
+  grantModule(r.macc_user,r.macc_brand,r.macc_module,r.macc_level||'full');r.approval_stage='done';
+  r.audit_history.push([user().name,'approved',(r.macc_level||'full')+' section access granted',0]);
+  if(typeof audit==='function')audit({record_id:rid,module:'access'},'approved','Granted '+(r.macc_level||'full')+' access to '+r.macc_module+' in '+r.macc_brand+' for '+r.macc_user);
+  if(typeof notif==='function')notif('&#9989;','<b>Section unlocked ('+(r.macc_level||'full')+')</b> \u00b7 '+r.macc_module,r.macc_user,{module:r.macc_module});
+  toast('Section access granted ('+(r.macc_level||'full')+')','ok');rerender();
 }
 /* route maccess approvals through existing approve button */
 var _doApproveV21=(typeof doApprove==='function')?doApprove:null;
@@ -2853,17 +2877,27 @@ renderSidebar=function(){
   MODGRP.forEach(function(pair){
     var grp=pair[0],mods=pair[1];
     mods.forEach(function(m){
-      if(moduleUnlocked(m))return;                 /* already shown by base */
+      if(moduleAllowed(m))return;                  /* native to this role, already shown by base */
       if(nav.querySelector('[data-pg="'+m+'"]'))return;
       var meta=MODULES.find(function(x){return x[0]===m;});if(!meta)return;
       /* find the group header to append under it */
       var grps=[].slice.call(nav.querySelectorAll('.sb-grp'));
       var hdr=grps.find(function(g){return g.textContent===grp;});
-      var pending=DB.requests.some(function(r){return r.kind==='maccess'&&r.macc_user===CU&&r.macc_brand===VIEW&&r.macc_module===m&&r.approval_stage!=='done'&&r.approval_stage!=='rejected';});
-      var div=document.createElement('div');div.className='sb-item locked';div.setAttribute('data-pg-locked',m);
-      div.title=pending?'Access requested \u2014 pending approval':'Locked \u2014 click to request access';
-      div.innerHTML='<span class="sb-ic">'+meta[1]+'</span>'+meta[2]+'<span class="sb-lock">'+(pending?'\u23f3':'\ud83d\udd12')+'</span>';
-      div.onclick=function(){requestModule(m);};
+      var div;
+      if(moduleUnlocked(m)){
+        /* granted via a past request: show as a normal clickable item, tagged with its level */
+        var lvl=(typeof moduleGrantLevel==='function'?moduleGrantLevel(CU,VIEW,m):null)||'full';
+        div=document.createElement('div');div.className='sb-item'+(PG===m?' on':'');div.setAttribute('data-pg',m);
+        div.title=lvl==='view'?'Granted \u2014 view access only':'Granted \u2014 full access';
+        div.innerHTML='<span class="sb-ic">'+meta[1]+'</span>'+meta[2]+(lvl==='view'?'<span class="sb-badge dim" style="font-size:9px">view</span>':'');
+        div.onclick=function(){navMod(m);};
+      } else {
+        var pending=DB.requests.find(function(r){return r.kind==='maccess'&&r.macc_user===CU&&r.macc_brand===VIEW&&r.macc_module===m&&r.approval_stage!=='done'&&r.approval_stage!=='rejected';});
+        div=document.createElement('div');div.className='sb-item locked';div.setAttribute('data-pg-locked',m);
+        div.title=pending?'Access requested ('+(pending.macc_level||'full')+') \u2014 pending approval':'Locked \u2014 click to request access';
+        div.innerHTML='<span class="sb-ic">'+meta[1]+'</span>'+meta[2]+'<span class="sb-lock">'+(pending?'\u23f3':'\ud83d\udd12')+'</span>';
+        div.onclick=pending?function(){toast('Access request pending with Finance Manager','info');}:function(){requestModuleAccess(m);};
+      }
       if(hdr){
         /* insert after the last existing item in this group: find next group header */
         var nextHdr=null;for(var gi=grps.indexOf(hdr)+1;gi<grps.length;gi++){nextHdr=grps[gi];break;}
@@ -3112,7 +3146,7 @@ pgApprovals=function(){
     quick='<div class="card" style="margin-bottom:16px"><div class="card-hd"><span class="card-title">Quick actions \u2014 awaiting you</span><span class="badge b-rose">'+mine.length+'</span></div><table class="tbl"><thead><tr><th>Request</th><th>Requester</th><th class="num">Amount</th><th>Stage</th><th>Action</th></tr></thead><tbody>'+
     mine.map(function(r){
       var act='';
-      if(r.kind==='access'||r.kind==='maccess'){act='<button class="act-btn act-approve" style="padding:4px 10px" onclick="doApprove(\''+r.record_id+'\')">&#10003; Grant</button>';}
+      if(r.kind==='access'||r.kind==='maccess'){act='<button class="act-btn act-approve" style="padding:4px 10px" onclick="doApprove(\''+r.record_id+'\')">&#10003; Grant'+(r.access_level||r.macc_level?' ('+(r.access_level||r.macc_level)+')':'')+'</button> <button class="act-btn act-reject" style="padding:4px 10px" onclick="doReject(\''+r.record_id+'\')">&times; Decline</button>';}
       else if(r.approval_stage==='payment'&&can('processPay')){act='<button class="act-btn act-pay" style="padding:4px 10px" onclick="doPay(\''+r.record_id+'\')">&#128176; Pay</button>';}
       else {act='<button class="act-btn act-approve" style="padding:4px 10px" onclick="doApprove(\''+r.record_id+'\')">&#10003;</button> <button class="act-btn act-reject" style="padding:4px 10px" onclick="doReject(\''+r.record_id+'\')">&times;</button>';}
       return '<tr><td><b>'+r.title+'</b></td><td>'+(r.requester||'\u2014')+'</td><td class="num">'+(r.amount?fmtINR(r.amount):'\u2014')+'</td><td><span class="badge '+stageBadge(r.approval_stage)[0]+'">'+stageBadge(r.approval_stage)[1]+'</span></td><td>'+act+'</td></tr>';
@@ -3893,6 +3927,10 @@ renderActions=function(){
   if(PG==='expense'&&rkey()==='admin'){
     h=h.replace(/<button class="tb-btn" onclick="doAddExpense\(\)">\+ Add expense<\/button>/,'');
     if(h.indexOf('Add expense')<0)h='<button class="tb-btn" onclick="teamAddExpense()">+ Add expense</button>'+h;
+  }
+  /* View-only granted section (requested "View access", not native to this role): no toolbar actions */
+  if(!moduleAllowed(PG)&&typeof moduleGrantLevel==='function'&&moduleGrantLevel(CU,VIEW,PG)==='view'){
+    h='<span class="dim" style="font-size:11.5px">View-only access \u00b7 request full access to take actions here</span>';
   }
   t.innerHTML=h;
 };
